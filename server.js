@@ -93,8 +93,23 @@ app.post(
 
       const modulosParsed = JSON.parse(modulos || '[]');
 
+      const data = readData();
+      const existingIndex = id ? data.cursos.findIndex(c => c.id == id) : -1;
+
+      // Se não existir, cria ID novo
+      const finalId = (existingIndex !== -1 && id) ? id : `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+
+      // Se for edição, reaproveita imagem/materiais antigos caso não mande novos
+      const old = existingIndex !== -1 ? data.cursos[existingIndex] : null;
+
+      const newImagemCapa = req.files?.imagemCapa?.[0]?.filename ?? null;
+      const newMateriais = req.files?.materiais
+        ? req.files.materiais.map(m => ({ filename: m.filename, originalname: m.originalname }))
+        : null;
+
       const curso = {
-        id: id || `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+        ...(old || {}),
+        id: finalId,
         email,
         codigo_afiliado_proprio,
         titulo,
@@ -103,25 +118,30 @@ app.post(
         nivel,
         preco,
         rascunho: rascunho === 'true' || rascunho === true,
-        imagemCapa: req.files?.imagemCapa?.[0]?.filename || null,
-        materiais: req.files?.materiais
-          ? req.files.materiais.map(m => ({ filename: m.filename, originalname: m.originalname }))
-          : [],
+        imagemCapa: newImagemCapa !== null ? newImagemCapa : (old?.imagemCapa ?? null),
+        materiais: newMateriais !== null ? newMateriais : (old?.materiais ?? []),
         modulos: modulosParsed,
-        dataCadastro: new Date().toISOString()
+        dataCadastro: old?.dataCadastro ?? new Date().toISOString(),
+        dataAtualizacao: new Date().toISOString()
       };
 
-      const data = readData();
+      if (existingIndex !== -1) {
+        data.cursos[existingIndex] = curso;
+        writeData(data);
+        return res.json({ message: 'Curso atualizado com sucesso!', curso });
+      }
+
       data.cursos.push(curso);
       writeData(data);
+      return res.json({ message: 'Curso criado com sucesso!', curso });
 
-      res.json({ message: 'Curso salvo com sucesso!', curso });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: 'Erro ao criar curso' });
+      res.status(500).json({ error: 'Erro ao criar/atualizar curso' });
     }
   }
 );
+
 
 /* =========================================
  * CURSOS - READ
