@@ -1,10 +1,150 @@
+// Editar curso
+app.put('/cursos/:id', (req, res) => {
+  const { id } = req.params;
+  if (!fs.existsSync(DATA_FILE)) return res.status(404).json({ error: 'Arquivo de dados não encontrado.' });
+  let data = JSON.parse(fs.readFileSync(DATA_FILE));
+  if (!data.cursos) return res.status(404).json({ error: 'Nenhum curso cadastrado.' });
+  const idx = data.cursos.findIndex(c => c.id == id);
+  if (idx === -1) return res.status(404).json({ error: 'Curso não encontrado.' });
+  // Atualiza apenas os campos enviados
+  data.cursos[idx] = { ...data.cursos[idx], ...req.body };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ message: 'Curso atualizado!', curso: data.cursos[idx] });
+});
+
+// Deletar curso
+app.delete('/cursos/:id', (req, res) => {
+  const { id } = req.params;
+  if (!fs.existsSync(DATA_FILE)) return res.status(404).json({ error: 'Arquivo de dados não encontrado.' });
+  let data = JSON.parse(fs.readFileSync(DATA_FILE));
+  if (!data.cursos) return res.status(404).json({ error: 'Nenhum curso cadastrado.' });
+  const idx = data.cursos.findIndex(c => c.id == id);
+  if (idx === -1) return res.status(404).json({ error: 'Curso não encontrado.' });
+  // Remove arquivos do curso (imagem, vídeos, materiais)
+  const curso = data.cursos[idx];
+  if (curso.imagemCapa) {
+    const imgPath = path.join(VIDEOS_DIR, curso.imagemCapa);
+    if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+  }
+  if (curso.materiais) {
+    curso.materiais.forEach(mat => {
+      const matPath = path.join(MATERIALS_DIR, mat.filename);
+      if (fs.existsSync(matPath)) fs.unlinkSync(matPath);
+    });
+  }
+  if (curso.modulos) {
+    curso.modulos.forEach(mod => {
+      if (mod.conteudos) {
+        mod.conteudos.forEach(cont => {
+          if (cont.video && cont.video.filename) {
+            const vidPath = path.join(VIDEOS_DIR, cont.video.filename);
+            if (fs.existsSync(vidPath)) fs.unlinkSync(vidPath);
+          }
+          if (cont.materiais) {
+            cont.materiais.forEach(mat => {
+              const matPath = path.join(MATERIALS_DIR, mat.filename);
+              if (fs.existsSync(matPath)) fs.unlinkSync(matPath);
+            });
+          }
+        });
+      }
+    });
+  }
+  data.cursos.splice(idx, 1);
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ message: 'Curso deletado!' });
+});
+
+// Editar módulo de um curso
+app.put('/cursos/:cursoId/modulos/:moduloIdx', (req, res) => {
+  const { cursoId, moduloIdx } = req.params;
+  if (!fs.existsSync(DATA_FILE)) return res.status(404).json({ error: 'Arquivo de dados não encontrado.' });
+  let data = JSON.parse(fs.readFileSync(DATA_FILE));
+  const curso = data.cursos.find(c => c.id == cursoId);
+  if (!curso) return res.status(404).json({ error: 'Curso não encontrado.' });
+  if (!curso.modulos || !curso.modulos[moduloIdx]) return res.status(404).json({ error: 'Módulo não encontrado.' });
+  curso.modulos[moduloIdx] = { ...curso.modulos[moduloIdx], ...req.body };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ message: 'Módulo atualizado!', modulo: curso.modulos[moduloIdx] });
+});
+
+// Deletar módulo de um curso
+app.delete('/cursos/:cursoId/modulos/:moduloIdx', (req, res) => {
+  const { cursoId, moduloIdx } = req.params;
+  if (!fs.existsSync(DATA_FILE)) return res.status(404).json({ error: 'Arquivo de dados não encontrado.' });
+  let data = JSON.parse(fs.readFileSync(DATA_FILE));
+  const curso = data.cursos.find(c => c.id == cursoId);
+  if (!curso) return res.status(404).json({ error: 'Curso não encontrado.' });
+  if (!curso.modulos || !curso.modulos[moduloIdx]) return res.status(404).json({ error: 'Módulo não encontrado.' });
+  // Remove arquivos do módulo
+  const modulo = curso.modulos[moduloIdx];
+  if (modulo.conteudos) {
+    modulo.conteudos.forEach(cont => {
+      if (cont.video && cont.video.filename) {
+        const vidPath = path.join(VIDEOS_DIR, cont.video.filename);
+        if (fs.existsSync(vidPath)) fs.unlinkSync(vidPath);
+      }
+      if (cont.materiais) {
+        cont.materiais.forEach(mat => {
+          const matPath = path.join(MATERIALS_DIR, mat.filename);
+          if (fs.existsSync(matPath)) fs.unlinkSync(matPath);
+        });
+      }
+    });
+  }
+  curso.modulos.splice(moduloIdx, 1);
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ message: 'Módulo deletado!' });
+});
+
+// Editar conteúdo de um módulo
+app.put('/cursos/:cursoId/modulos/:moduloIdx/conteudos/:conteudoIdx', (req, res) => {
+  const { cursoId, moduloIdx, conteudoIdx } = req.params;
+  if (!fs.existsSync(DATA_FILE)) return res.status(404).json({ error: 'Arquivo de dados não encontrado.' });
+  let data = JSON.parse(fs.readFileSync(DATA_FILE));
+  const curso = data.cursos.find(c => c.id == cursoId);
+  if (!curso) return res.status(404).json({ error: 'Curso não encontrado.' });
+  const modulo = curso.modulos && curso.modulos[moduloIdx];
+  if (!modulo) return res.status(404).json({ error: 'Módulo não encontrado.' });
+  if (!modulo.conteudos || !modulo.conteudos[conteudoIdx]) return res.status(404).json({ error: 'Conteúdo não encontrado.' });
+  modulo.conteudos[conteudoIdx] = { ...modulo.conteudos[conteudoIdx], ...req.body };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ message: 'Conteúdo atualizado!', conteudo: modulo.conteudos[conteudoIdx] });
+});
+
+// Deletar conteúdo de um módulo
+app.delete('/cursos/:cursoId/modulos/:moduloIdx/conteudos/:conteudoIdx', (req, res) => {
+  const { cursoId, moduloIdx, conteudoIdx } = req.params;
+  if (!fs.existsSync(DATA_FILE)) return res.status(404).json({ error: 'Arquivo de dados não encontrado.' });
+  let data = JSON.parse(fs.readFileSync(DATA_FILE));
+  const curso = data.cursos.find(c => c.id == cursoId);
+  if (!curso) return res.status(404).json({ error: 'Curso não encontrado.' });
+  const modulo = curso.modulos && curso.modulos[moduloIdx];
+  if (!modulo) return res.status(404).json({ error: 'Módulo não encontrado.' });
+  if (!modulo.conteudos || !modulo.conteudos[conteudoIdx]) return res.status(404).json({ error: 'Conteúdo não encontrado.' });
+  // Remove arquivos do conteúdo
+  const conteudo = modulo.conteudos[conteudoIdx];
+  if (conteudo.video && conteudo.video.filename) {
+    const vidPath = path.join(VIDEOS_DIR, conteudo.video.filename);
+    if (fs.existsSync(vidPath)) fs.unlinkSync(vidPath);
+  }
+  if (conteudo.materiais) {
+    conteudo.materiais.forEach(mat => {
+      const matPath = path.join(MATERIALS_DIR, mat.filename);
+      if (fs.existsSync(matPath)) fs.unlinkSync(matPath);
+    });
+  }
+  modulo.conteudos.splice(conteudoIdx, 1);
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ message: 'Conteúdo deletado!' });
+});
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3030;
 
 const VIDEOS_DIR = path.join(__dirname, 'videos');
 const DATA_FILE = path.join(VIDEOS_DIR, 'data.json');
