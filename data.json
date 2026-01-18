@@ -1,0 +1,155 @@
+{
+  "cursos": [
+    {
+      "id": "1768754367286-849054093",
+      "email": "jefferson@receitasmilionarias.com.br",
+      "titulo": "Teste de Aula",
+      "descricao": "testestestestestes",
+      "categoria": "Gastronomia",
+      "nivel": "Iniciante",
+      "preco": "0",
+      "rascunho": false,
+      "imagemCapa": "1768754367251-567596734-449435117_1654459835301080_3210547451560876010_n.jpg",
+      "materiais": [
+        {
+          "filename": "1768754367283-55850117-Grupo_Apoio_Homens_MFC_Tatui (1).pdf",
+          "originalname": "Grupo_Apoio_Homens_MFC_Tatui (1).pdf"
+        }
+      ],
+      "modulos": [
+        {
+          "titulo": "Módulo 01: Introdução",
+          "conteudos": [
+            {
+              "tituloAula": "teste",
+              "duracao": "1",
+              "video": {
+                "filename": "1768754367252-139503808-Crie_todas_as_202512042134_thhp3.mp4"
+              },
+              "materiais": [
+                {
+                  "filename": "1768754367283-55850117-Grupo_Apoio_Homens_MFC_Tatui (1).pdf",
+                  "originalname": "Grupo_Apoio_Homens_MFC_Tatui (1).pdf"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "titulo": "Módulo 2",
+          "conteudos": [
+            {
+              "tituloAula": "teste nao tem nada aqui",
+              "duracao": "33",
+              "video": {},
+              "materiais": []
+            }
+          ]
+        }
+      ],
+      "dataCadastro": "2026-01-18T16:39:27.286Z",
+      "dataAtualizacao": "2026-01-18T16:39:27.286Z"
+    },
+    {
+      "id": "1768756209852-756385340",
+      "email": "jefferson@receitasmilionarias.com.br",
+      "titulo": "Novo Curos teste",
+      "descricao": "Novo Curos teste",
+      "categoria": "Marketing",
+      "nivel": "Iniciante",
+      "preco": "0",
+      "rascunho": true,
+      "imagemCapa": "1768756209528-268172161-torta-assada-de-frango.jpg",
+      "materiais": [
+        {
+          "filename": "1768756209848-782661867-Grupo_Apoio_Homens_MFC_Tatui.pdf",
+          "originalname": "Grupo_Apoio_Homens_MFC_Tatui.pdf"
+        }
+      ],
+      "modulos": [
+        {
+          "titulo": "Módulo 01: Introdução",
+          "conteudos": [
+            {
+              "tituloAula": "Nova Aula",
+              "duracao": "06:36",
+              "video": {
+                "filename": "1768756209533-82069036-Karen_Gomes__Psicóloga_Clínica.mp4"
+              },
+              "materiais": [
+                {
+                  "filename": "1768756209848-782661867-Grupo_Apoio_Homens_MFC_Tatui.pdf",
+                  "originalname": "Grupo_Apoio_Homens_MFC_Tatui.pdf"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "dataCadastro": "2026-01-18T17:10:09.852Z",
+      "dataAtualizacao": "2026-01-18T17:10:09.852Z"
+    }
+  ],
+  "usuarios": {
+    "jefferson@receitasmilionarias.com.br": {
+      "meusCursos": [
+        "1768754367286-849054093"
+      ],
+      "favoritos": [],
+      "progresso": {
+        "1768754367286-849054093": {
+          "completadas": [
+            "les-0-0"
+          ]
+        },
+        "1768756209852-756385340": {
+          "completadas": [
+            "les-0-0"
+          ]
+        }
+      },
+      "certificados": {
+        "1768756209852-756385340": {
+          "code": "RM-385340-453984",
+          "completedAt": "2026-01-18T17:52:09.302Z"
+        }
+      },
+      "assinatura": {
+        "text": "Jefferson Pereira",
+        "font": "great-vibes",
+        "updatedAt": "2026-01-18T19:02:41.460Z"
+      }
+    },
+    "edueloi.ee@gmail.com": {
+      "meusCursos": [
+        "1768754367286-849054093"
+      ],
+      "favoritos": [],
+      "progresso": {
+        "1768754367286-849054093": {
+          "completadas": [
+            "les-0-0",
+            "les-1-0"
+          ]
+        }
+      },
+      "certificados": {
+        "1768754367286-849054093": {
+          "code": "RM-054093-569947",
+          "completedAt": "2026-01-18T18:22:51.767Z"
+        }
+      }
+    }
+  },
+  "categorias": [
+    "Vendas",
+    "Marketing",
+    "Gatronomia",
+    "Financas",
+    "Churrasco",
+    "Fitness",
+    "Vegano",
+    "Doces & Sobremesas",
+    "Salgados"
+  ]
+}

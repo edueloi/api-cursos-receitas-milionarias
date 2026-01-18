@@ -19,6 +19,13 @@ const PORT = process.env.PORT || 3030;
 /* =========================================
  * MIDDLEWARES
  * ========================================= */
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -32,7 +39,21 @@ const DATA_FILE = path.join(BASE_DIR, 'data.json');
 
 if (!fs.existsSync(VIDEOS_DIR)) fs.mkdirSync(VIDEOS_DIR);
 if (!fs.existsSync(MATERIALS_DIR)) fs.mkdirSync(MATERIALS_DIR);
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ cursos: [] }, null, 2));
+const DEFAULT_CATEGORIES = [
+  'Vendas',
+  'Marketing',
+  'Gatronomia',
+  'Financas',
+  'Churrasco',
+  'Fitness',
+  'Vegano',
+  'Doces & Sobremesas',
+  'Salgados'
+];
+
+if (!fs.existsSync(DATA_FILE)) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify({ cursos: [], usuarios: {}, categorias: DEFAULT_CATEGORIES }, null, 2));
+}
 
 /* =========================================
  * MULTER CONFIG
@@ -56,7 +77,13 @@ const upload = multer({
 /* =========================================
  * HELPERS
  * ========================================= */
-const readData = () => JSON.parse(fs.readFileSync(DATA_FILE));
+const readData = () => {
+  const data = JSON.parse(fs.readFileSync(DATA_FILE));
+  if (!data.cursos) data.cursos = [];
+  if (!data.usuarios) data.usuarios = {};
+  if (!data.categorias || data.categorias.length === 0) data.categorias = DEFAULT_CATEGORIES;
+  return data;
+};
 const writeData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
 /* =========================================
@@ -81,6 +108,7 @@ app.post(
       const {
         id,
         email,
+        instrutorNome,
         codigo_afiliado_proprio,
         titulo,
         descricao,
@@ -91,7 +119,36 @@ app.post(
         modulos
       } = req.body;
 
-      const modulosParsed = JSON.parse(modulos || '[]');
+      if (!email || !titulo) {
+        return res.status(400).json({ error: 'Email e titulo sao obrigatorios.' });
+      }
+
+      let modulosParsed = [];
+      try {
+        modulosParsed = JSON.parse(modulos || '[]');
+      } catch (parseErr) {
+        return res.status(400).json({ error: 'Modulos invalidos.' });
+      }
+      const videoFileMap = new Map((req.files?.videos || []).map(f => [f.originalname, f.filename]));
+      const materialFileMap = new Map((req.files?.materiais || []).map(f => [f.originalname, f.filename]));
+      const rawModules = Array.isArray(modulosParsed) ? modulosParsed : [];
+      const modulosNormalized = rawModules.map(mod => ({
+        ...mod,
+        conteudos: (mod.conteudos || []).map(lesson => {
+          const originalVideoName = lesson?.video?.filename;
+          const video = originalVideoName && videoFileMap.has(originalVideoName)
+            ? { ...lesson.video, filename: videoFileMap.get(originalVideoName) }
+            : lesson.video;
+          const materiais = (lesson.materiais || []).map(mat => {
+            const key = mat.originalname || mat.filename;
+            if (key && materialFileMap.has(key)) {
+              return { ...mat, filename: materialFileMap.get(key) };
+            }
+            return mat;
+          });
+          return { ...lesson, video, materiais };
+        })
+      }));
 
       const data = readData();
       const existingIndex = id ? data.cursos.findIndex(c => c.id == id) : -1;
@@ -107,10 +164,18 @@ app.post(
         ? req.files.materiais.map(m => ({ filename: m.filename, originalname: m.originalname }))
         : null;
 
+      const categoriaNome = (categoria || '').toString().trim();
+      if (categoriaNome) {
+        if (!data.categorias.some(c => c.toLowerCase() === categoriaNome.toLowerCase())) {
+          data.categorias.push(categoriaNome);
+        }
+      }
+
       const curso = {
         ...(old || {}),
         id: finalId,
         email,
+        instrutorNome: instrutorNome || old?.instrutorNome || '',
         codigo_afiliado_proprio,
         titulo,
         descricao,
@@ -120,7 +185,7 @@ app.post(
         rascunho: rascunho === 'true' || rascunho === true,
         imagemCapa: newImagemCapa !== null ? newImagemCapa : (old?.imagemCapa ?? null),
         materiais: newMateriais !== null ? newMateriais : (old?.materiais ?? []),
-        modulos: modulosParsed,
+        modulos: modulosNormalized,
         dataCadastro: old?.dataCadastro ?? new Date().toISOString(),
         dataAtualizacao: new Date().toISOString()
       };
@@ -152,6 +217,189 @@ app.get('/cursos', (req, res) => {
 });
 
 /* =========================================
+ * CATEGORIAS
+ * ========================================= */
+app.get('/categorias', (req, res) => {
+  const data = readData();
+  res.json({ categorias: data.categorias || [] });
+});
+
+app.post('/categorias', (req, res) => {
+  const data = readData();
+  const name = (req.body?.name || '').toString().trim();
+  if (!name) return res.status(400).json({ error: 'Nome da categoria obrigatorio.' });
+  if (!data.categorias.some(c => c.toLowerCase() === name.toLowerCase())) {
+    data.categorias.push(name);
+    writeData(data);
+  }
+  res.json({ categorias: data.categorias });
+});
+
+/* =========================================
+ * USUARIOS - LISTAS (MEUS CURSOS / FAVORITOS)
+ * ========================================= */
+app.get('/usuarios/:email/listas', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const userLists = data.usuarios[email] || { meusCursos: [], favoritos: [] };
+  res.json(userLists);
+});
+
+app.post('/usuarios/:email/meus-cursos', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const { courseId, action } = req.body || {};
+  if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
+
+  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [] };
+  const list = data.usuarios[email].meusCursos;
+  const id = String(courseId);
+
+  if (action === 'remove') {
+    data.usuarios[email].meusCursos = list.filter(c => String(c) !== id);
+  } else if (!list.includes(id)) {
+    list.push(id);
+  }
+
+  writeData(data);
+  res.json({ meusCursos: data.usuarios[email].meusCursos });
+});
+
+app.post('/usuarios/:email/favoritos', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const { courseId, action } = req.body || {};
+  if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
+
+  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [] };
+  const list = data.usuarios[email].favoritos;
+  const id = String(courseId);
+
+  if (action === 'remove') {
+    data.usuarios[email].favoritos = list.filter(c => String(c) !== id);
+  } else if (!list.includes(id)) {
+    list.push(id);
+  }
+
+  writeData(data);
+  res.json({ favoritos: data.usuarios[email].favoritos });
+});
+
+/* =========================================
+ * USUARIOS - ASSINATURA
+ * ========================================= */
+app.get('/usuarios/:email/assinatura', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const assinatura = data.usuarios[email]?.assinatura || null;
+  res.json({ assinatura });
+});
+
+app.post('/usuarios/:email/assinatura', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const { text, font } = req.body || {};
+  const cleanText = (text || '').toString().trim();
+  const cleanFont = (font || '').toString().trim();
+  if (!cleanText) return res.status(400).json({ error: 'Texto da assinatura obrigatorio.' });
+  if (!cleanFont) return res.status(400).json({ error: 'Fonte da assinatura obrigatoria.' });
+
+  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+  data.usuarios[email].assinatura = { text: cleanText, font: cleanFont, updatedAt: new Date().toISOString() };
+  writeData(data);
+  res.json({ assinatura: data.usuarios[email].assinatura });
+});
+
+/* =========================================
+ * USUARIOS - PROGRESSO
+ * ========================================= */
+app.get('/usuarios/:email/progresso', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const progresso = data.usuarios[email]?.progresso || {};
+  res.json({ progresso });
+});
+
+app.post('/usuarios/:email/progresso', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const { courseId, lessonId, completed } = req.body || {};
+  if (!courseId || !lessonId) return res.status(400).json({ error: 'courseId e lessonId obrigatorios.' });
+
+  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {} };
+  if (!data.usuarios[email].progresso) data.usuarios[email].progresso = {};
+  const progressEntry = data.usuarios[email].progresso;
+  const cId = String(courseId);
+  const lId = String(lessonId);
+  if (!progressEntry[cId]) progressEntry[cId] = { completadas: [] };
+
+  const list = progressEntry[cId].completadas || [];
+  if (completed === false) {
+    progressEntry[cId].completadas = list.filter(id => String(id) !== lId);
+  } else if (!list.includes(lId)) {
+    list.push(lId);
+  }
+
+  writeData(data);
+  res.json({ progresso: data.usuarios[email].progresso });
+});
+
+/* =========================================
+ * USUARIOS - CERTIFICADOS
+ * ========================================= */
+app.get('/usuarios/:email/certificados', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const certificados = data.usuarios[email]?.certificados || {};
+  res.json({ certificados });
+});
+
+app.post('/usuarios/:email/certificados', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const { courseId, completedAt } = req.body || {};
+  if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
+
+  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+  if (!data.usuarios[email].certificados) data.usuarios[email].certificados = {};
+
+  const id = String(courseId);
+  if (!data.usuarios[email].certificados[id]) {
+    const code = `RM-${id.slice(-6).toUpperCase()}-${Math.round(Math.random() * 1e6)}`;
+    data.usuarios[email].certificados[id] = {
+      code,
+      completedAt: completedAt || new Date().toISOString()
+    };
+    writeData(data);
+  }
+
+  res.json({ certificados: data.usuarios[email].certificados });
+});
+
+app.get('/certificados/:code', (req, res) => {
+  const data = readData();
+  const code = req.params.code;
+  const emails = Object.keys(data.usuarios || {});
+  for (const email of emails) {
+    const certs = data.usuarios[email]?.certificados || {};
+    for (const courseId of Object.keys(certs)) {
+      if (certs[courseId]?.code === code) {
+        return res.json({
+          valido: true,
+          certificado: {
+            email,
+            courseId,
+            code: certs[courseId].code,
+            completedAt: certs[courseId].completedAt
+          }
+        });
+      }
+    }
+  }
+  res.status(404).json({ valido: false });
+});
+
+/* =========================================
  * CURSOS - UPDATE
  * ========================================= */
 app.put('/cursos/:id', (req, res) => {
@@ -163,6 +411,84 @@ app.put('/cursos/:id', (req, res) => {
   writeData(data);
 
   res.json({ message: 'Curso atualizado!', curso: data.cursos[idx] });
+});
+
+/* =========================================
+ * CURSOS - PERGUNTAS
+ * ========================================= */
+app.get('/cursos/:id/perguntas', (req, res) => {
+  const data = readData();
+  const curso = data.cursos.find(c => c.id == req.params.id);
+  if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+  res.json({ perguntas: curso.perguntas || [] });
+});
+
+app.post('/cursos/:id/perguntas', (req, res) => {
+  const data = readData();
+  const curso = data.cursos.find(c => c.id == req.params.id);
+  if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+  const { autorEmail, autorNome, texto } = req.body || {};
+  if (!autorEmail || !autorNome || !texto) {
+    return res.status(400).json({ error: 'autorEmail, autorNome e texto obrigatorios.' });
+  }
+  const pergunta = {
+    id: `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+    autorEmail,
+    autorNome,
+    texto,
+    createdAt: new Date().toISOString(),
+    respostas: []
+  };
+  curso.perguntas = curso.perguntas || [];
+  curso.perguntas.push(pergunta);
+  writeData(data);
+  res.json({ pergunta });
+});
+
+app.put('/cursos/:id/perguntas/:pid', (req, res) => {
+  const data = readData();
+  const curso = data.cursos.find(c => c.id == req.params.id);
+  if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+  const pergunta = (curso.perguntas || []).find(p => p.id == req.params.pid);
+  if (!pergunta) return res.status(404).json({ error: 'Pergunta nao encontrada.' });
+  const { texto } = req.body || {};
+  if (!texto) return res.status(400).json({ error: 'texto obrigatorio.' });
+  pergunta.texto = texto;
+  pergunta.updatedAt = new Date().toISOString();
+  writeData(data);
+  res.json({ pergunta });
+});
+
+app.delete('/cursos/:id/perguntas/:pid', (req, res) => {
+  const data = readData();
+  const curso = data.cursos.find(c => c.id == req.params.id);
+  if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+  curso.perguntas = (curso.perguntas || []).filter(p => p.id != req.params.pid);
+  writeData(data);
+  res.json({ message: 'Pergunta removida.' });
+});
+
+app.post('/cursos/:id/perguntas/:pid/respostas', (req, res) => {
+  const data = readData();
+  const curso = data.cursos.find(c => c.id == req.params.id);
+  if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+  const pergunta = (curso.perguntas || []).find(p => p.id == req.params.pid);
+  if (!pergunta) return res.status(404).json({ error: 'Pergunta nao encontrada.' });
+  const { autorEmail, autorNome, texto } = req.body || {};
+  if (!autorEmail || !autorNome || !texto) {
+    return res.status(400).json({ error: 'autorEmail, autorNome e texto obrigatorios.' });
+  }
+  const resposta = {
+    id: `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+    autorEmail,
+    autorNome,
+    texto,
+    createdAt: new Date().toISOString()
+  };
+  pergunta.respostas = pergunta.respostas || [];
+  pergunta.respostas.push(resposta);
+  writeData(data);
+  res.json({ resposta });
 });
 
 /* =========================================
@@ -195,6 +521,23 @@ app.delete('/cursos/:id', (req, res) => {
   );
 
   data.cursos.splice(idx, 1);
+  if (data.usuarios) {
+    Object.keys(data.usuarios).forEach(email => {
+      const lists = data.usuarios[email];
+      if (lists?.meusCursos) {
+        lists.meusCursos = lists.meusCursos.filter(cid => String(cid) !== String(req.params.id));
+      }
+      if (lists?.favoritos) {
+        lists.favoritos = lists.favoritos.filter(cid => String(cid) !== String(req.params.id));
+      }
+      if (lists?.progresso) {
+        delete lists.progresso[String(req.params.id)];
+      }
+      if (lists?.certificados) {
+        delete lists.certificados[String(req.params.id)];
+      }
+    });
+  }
   writeData(data);
 
   res.json({ message: 'Curso deletado!' });
@@ -206,7 +549,32 @@ app.delete('/cursos/:id', (req, res) => {
 app.get('/videos/:filename', (req, res) => {
   const file = path.join(VIDEOS_DIR, req.params.filename);
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'Vídeo não encontrado.' });
-  res.download(file);
+
+  const range = req.headers.range;
+  const stat = fs.statSync(file);
+  const fileSize = stat.size;
+
+  if (!range) {
+    return res.sendFile(file);
+  }
+
+  const parts = range.replace(/bytes=/, '').split('-');
+  const start = parseInt(parts[0], 10);
+  const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+  if (start >= fileSize || end >= fileSize) {
+    res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+    return;
+  }
+
+  const chunkSize = (end - start) + 1;
+  res.writeHead(206, {
+    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': chunkSize,
+    'Content-Type': 'video/mp4'
+  });
+
+  fs.createReadStream(file, { start, end }).pipe(res);
 });
 
 app.get('/materiais/:filename', (req, res) => {
