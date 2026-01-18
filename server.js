@@ -22,6 +22,13 @@ const PORT = process.env.PORT || 3030;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+/**
+ * ✅ IMPORTANTE (CORS):
+ * Como seu NGINX já está setando os headers de CORS (add_header ...),
+ * NÃO setamos CORS aqui no Node para evitar header duplicado e erro:
+ * "Access-Control-Allow-Origin contains multiple values"
+ */
+
 /* =========================================
  * PATHS & STORAGE
  * ========================================= */
@@ -32,6 +39,7 @@ const DATA_FILE = path.join(BASE_DIR, 'data.json');
 
 if (!fs.existsSync(VIDEOS_DIR)) fs.mkdirSync(VIDEOS_DIR);
 if (!fs.existsSync(MATERIALS_DIR)) fs.mkdirSync(MATERIALS_DIR);
+
 const DEFAULT_CATEGORIES = [
   'Vendas',
   'Marketing',
@@ -45,7 +53,10 @@ const DEFAULT_CATEGORIES = [
 ];
 
 if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ cursos: [], usuarios: {}, categorias: DEFAULT_CATEGORIES }, null, 2));
+  fs.writeFileSync(
+    DATA_FILE,
+    JSON.stringify({ cursos: [], usuarios: {}, categorias: DEFAULT_CATEGORIES }, null, 2)
+  );
 }
 
 /* =========================================
@@ -77,7 +88,9 @@ const readData = () => {
   if (!data.categorias || data.categorias.length === 0) data.categorias = DEFAULT_CATEGORIES;
   return data;
 };
-const writeData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
+const writeData = (data) =>
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
 /* =========================================
  * HEALTH CHECK
@@ -122,16 +135,20 @@ app.post(
       } catch (parseErr) {
         return res.status(400).json({ error: 'Modulos invalidos.' });
       }
+
       const videoFileMap = new Map((req.files?.videos || []).map(f => [f.originalname, f.filename]));
       const materialFileMap = new Map((req.files?.materiais || []).map(f => [f.originalname, f.filename]));
+
       const rawModules = Array.isArray(modulosParsed) ? modulosParsed : [];
       const modulosNormalized = rawModules.map(mod => ({
         ...mod,
         conteudos: (mod.conteudos || []).map(lesson => {
           const originalVideoName = lesson?.video?.filename;
-          const video = originalVideoName && videoFileMap.has(originalVideoName)
-            ? { ...lesson.video, filename: videoFileMap.get(originalVideoName) }
-            : lesson.video;
+          const video =
+            originalVideoName && videoFileMap.has(originalVideoName)
+              ? { ...lesson.video, filename: videoFileMap.get(originalVideoName) }
+              : lesson.video;
+
           const materiais = (lesson.materiais || []).map(mat => {
             const key = mat.originalname || mat.filename;
             if (key && materialFileMap.has(key)) {
@@ -139,6 +156,7 @@ app.post(
             }
             return mat;
           });
+
           return { ...lesson, video, materiais };
         })
       }));
@@ -147,7 +165,8 @@ app.post(
       const existingIndex = id ? data.cursos.findIndex(c => c.id == id) : -1;
 
       // Se não existir, cria ID novo
-      const finalId = (existingIndex !== -1 && id) ? id : `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      const finalId =
+        existingIndex !== -1 && id ? id : `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
 
       // Se for edição, reaproveita imagem/materiais antigos caso não mande novos
       const old = existingIndex !== -1 ? data.cursos[existingIndex] : null;
@@ -200,7 +219,6 @@ app.post(
   }
 );
 
-
 /* =========================================
  * CURSOS - READ
  * ========================================= */
@@ -221,6 +239,7 @@ app.post('/categorias', (req, res) => {
   const data = readData();
   const name = (req.body?.name || '').toString().trim();
   if (!name) return res.status(400).json({ error: 'Nome da categoria obrigatorio.' });
+
   if (!data.categorias.some(c => c.toLowerCase() === name.toLowerCase())) {
     data.categorias.push(name);
     writeData(data);
@@ -245,6 +264,7 @@ app.post('/usuarios/:email/meus-cursos', (req, res) => {
   if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
 
   if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [] };
+
   const list = data.usuarios[email].meusCursos;
   const id = String(courseId);
 
@@ -265,6 +285,7 @@ app.post('/usuarios/:email/favoritos', (req, res) => {
   if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
 
   if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [] };
+
   const list = data.usuarios[email].favoritos;
   const id = String(courseId);
 
@@ -292,13 +313,23 @@ app.post('/usuarios/:email/assinatura', (req, res) => {
   const data = readData();
   const email = req.params.email;
   const { text, font } = req.body || {};
+
   const cleanText = (text || '').toString().trim();
   const cleanFont = (font || '').toString().trim();
+
   if (!cleanText) return res.status(400).json({ error: 'Texto da assinatura obrigatorio.' });
   if (!cleanFont) return res.status(400).json({ error: 'Fonte da assinatura obrigatoria.' });
 
-  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
-  data.usuarios[email].assinatura = { text: cleanText, font: cleanFont, updatedAt: new Date().toISOString() };
+  if (!data.usuarios[email]) {
+    data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+  }
+
+  data.usuarios[email].assinatura = {
+    text: cleanText,
+    font: cleanFont,
+    updatedAt: new Date().toISOString()
+  };
+
   writeData(data);
   res.json({ assinatura: data.usuarios[email].assinatura });
 });
@@ -317,16 +348,22 @@ app.post('/usuarios/:email/progresso', (req, res) => {
   const data = readData();
   const email = req.params.email;
   const { courseId, lessonId, completed } = req.body || {};
-  if (!courseId || !lessonId) return res.status(400).json({ error: 'courseId e lessonId obrigatorios.' });
+
+  if (!courseId || !lessonId) {
+    return res.status(400).json({ error: 'courseId e lessonId obrigatorios.' });
+  }
 
   if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {} };
   if (!data.usuarios[email].progresso) data.usuarios[email].progresso = {};
+
   const progressEntry = data.usuarios[email].progresso;
   const cId = String(courseId);
   const lId = String(lessonId);
+
   if (!progressEntry[cId]) progressEntry[cId] = { completadas: [] };
 
   const list = progressEntry[cId].completadas || [];
+
   if (completed === false) {
     progressEntry[cId].completadas = list.filter(id => String(id) !== lId);
   } else if (!list.includes(lId)) {
@@ -351,12 +388,16 @@ app.post('/usuarios/:email/certificados', (req, res) => {
   const data = readData();
   const email = req.params.email;
   const { courseId, completedAt } = req.body || {};
+
   if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
 
-  if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+  if (!data.usuarios[email]) {
+    data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+  }
   if (!data.usuarios[email].certificados) data.usuarios[email].certificados = {};
 
   const id = String(courseId);
+
   if (!data.usuarios[email].certificados[id]) {
     const code = `RM-${id.slice(-6).toUpperCase()}-${Math.round(Math.random() * 1e6)}`;
     data.usuarios[email].certificados[id] = {
@@ -373,6 +414,7 @@ app.get('/certificados/:code', (req, res) => {
   const data = readData();
   const code = req.params.code;
   const emails = Object.keys(data.usuarios || {});
+
   for (const email of emails) {
     const certs = data.usuarios[email]?.certificados || {};
     for (const courseId of Object.keys(certs)) {
@@ -389,6 +431,7 @@ app.get('/certificados/:code', (req, res) => {
       }
     }
   }
+
   res.status(404).json({ valido: false });
 });
 
@@ -413,6 +456,7 @@ app.get('/cursos/:id/perguntas', (req, res) => {
   const data = readData();
   const curso = data.cursos.find(c => c.id == req.params.id);
   if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+
   res.json({ perguntas: curso.perguntas || [] });
 });
 
@@ -420,10 +464,12 @@ app.post('/cursos/:id/perguntas', (req, res) => {
   const data = readData();
   const curso = data.cursos.find(c => c.id == req.params.id);
   if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+
   const { autorEmail, autorNome, texto } = req.body || {};
   if (!autorEmail || !autorNome || !texto) {
     return res.status(400).json({ error: 'autorEmail, autorNome e texto obrigatorios.' });
   }
+
   const pergunta = {
     id: `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
     autorEmail,
@@ -432,9 +478,11 @@ app.post('/cursos/:id/perguntas', (req, res) => {
     createdAt: new Date().toISOString(),
     respostas: []
   };
+
   curso.perguntas = curso.perguntas || [];
   curso.perguntas.push(pergunta);
   writeData(data);
+
   res.json({ pergunta });
 });
 
@@ -442,13 +490,17 @@ app.put('/cursos/:id/perguntas/:pid', (req, res) => {
   const data = readData();
   const curso = data.cursos.find(c => c.id == req.params.id);
   if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+
   const pergunta = (curso.perguntas || []).find(p => p.id == req.params.pid);
   if (!pergunta) return res.status(404).json({ error: 'Pergunta nao encontrada.' });
+
   const { texto } = req.body || {};
   if (!texto) return res.status(400).json({ error: 'texto obrigatorio.' });
+
   pergunta.texto = texto;
   pergunta.updatedAt = new Date().toISOString();
   writeData(data);
+
   res.json({ pergunta });
 });
 
@@ -456,8 +508,10 @@ app.delete('/cursos/:id/perguntas/:pid', (req, res) => {
   const data = readData();
   const curso = data.cursos.find(c => c.id == req.params.id);
   if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+
   curso.perguntas = (curso.perguntas || []).filter(p => p.id != req.params.pid);
   writeData(data);
+
   res.json({ message: 'Pergunta removida.' });
 });
 
@@ -465,12 +519,15 @@ app.post('/cursos/:id/perguntas/:pid/respostas', (req, res) => {
   const data = readData();
   const curso = data.cursos.find(c => c.id == req.params.id);
   if (!curso) return res.status(404).json({ error: 'Curso nao encontrado.' });
+
   const pergunta = (curso.perguntas || []).find(p => p.id == req.params.pid);
   if (!pergunta) return res.status(404).json({ error: 'Pergunta nao encontrada.' });
+
   const { autorEmail, autorNome, texto } = req.body || {};
   if (!autorEmail || !autorNome || !texto) {
     return res.status(400).json({ error: 'autorEmail, autorNome e texto obrigatorios.' });
   }
+
   const resposta = {
     id: `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
     autorEmail,
@@ -478,9 +535,11 @@ app.post('/cursos/:id/perguntas/:pid/respostas', (req, res) => {
     texto,
     createdAt: new Date().toISOString()
   };
+
   pergunta.respostas = pergunta.respostas || [];
   pergunta.respostas.push(resposta);
   writeData(data);
+
   res.json({ resposta });
 });
 
@@ -514,6 +573,7 @@ app.delete('/cursos/:id', (req, res) => {
   );
 
   data.cursos.splice(idx, 1);
+
   if (data.usuarios) {
     Object.keys(data.usuarios).forEach(email => {
       const lists = data.usuarios[email];
@@ -531,8 +591,8 @@ app.delete('/cursos/:id', (req, res) => {
       }
     });
   }
-  writeData(data);
 
+  writeData(data);
   res.json({ message: 'Curso deletado!' });
 });
 
@@ -547,19 +607,19 @@ app.get('/videos/:filename', (req, res) => {
   const stat = fs.statSync(file);
   const fileSize = stat.size;
 
-  if (!range) {
-    return res.sendFile(file);
-  }
+  if (!range) return res.sendFile(file);
 
   const parts = range.replace(/bytes=/, '').split('-');
   const start = parseInt(parts[0], 10);
   const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
   if (start >= fileSize || end >= fileSize) {
     res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
     return;
   }
 
   const chunkSize = (end - start) + 1;
+
   res.writeHead(206, {
     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
     'Accept-Ranges': 'bytes',
