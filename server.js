@@ -444,6 +444,82 @@ app.post('/usuarios/:email/certificados', (req, res) => {
   res.json({ certificados: data.usuarios[email].certificados });
 });
 
+/* =========================================
+ * USUARIOS - DASHBOARD (ALUNO)
+ * ========================================= */
+app.get('/usuarios/:email/dashboard', (req, res) => {
+  const data = readData();
+  const email = String(req.params.email || '').toLowerCase().trim();
+  const userData = data.usuarios[email] || { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+
+  const enrolledIds = (userData.meusCursos || []).map(id => String(id));
+  const enrolledCourses = (data.cursos || []).filter(c => enrolledIds.includes(String(c.id)));
+
+  let totalLessons = 0;
+  let completedLessons = 0;
+  const progressByCourse = enrolledCourses.map(course => {
+    let courseTotal = 0;
+    (course.modulos || []).forEach(mod => {
+      courseTotal += (mod.conteudos || []).length;
+    });
+    const courseProgress = userData.progresso?.[String(course.id)]?.completadas || [];
+    const courseCompleted = courseProgress.length;
+    totalLessons += courseTotal;
+    completedLessons += courseCompleted;
+    const percent = courseTotal > 0 ? Math.round((courseCompleted / courseTotal) * 100) : 0;
+    return {
+      courseId: String(course.id),
+      courseTitle: course.titulo || '',
+      completedLessons: courseCompleted,
+      totalLessons: courseTotal,
+      progressPercent: percent
+    };
+  });
+
+  const completedCourses = Object.keys(userData.certificados || {}).length;
+
+  let questionsAsked = 0;
+  (data.cursos || []).forEach(course => {
+    const perguntas = course.perguntas || [];
+    questionsAsked += perguntas.filter(p => String(p.autorEmail || '').toLowerCase().trim() === email).length;
+  });
+
+  const recentActivity = [];
+  Object.keys(userData.certificados || {}).forEach(courseId => {
+    const cert = userData.certificados[courseId];
+    const course = (data.cursos || []).find(c => String(c.id) === String(courseId));
+    if (cert?.completedAt) {
+      recentActivity.push({
+        type: 'certificate',
+        title: `Concluiu o curso: ${course?.titulo || 'Curso'}`,
+        at: cert.completedAt
+      });
+    }
+  });
+  (data.cursos || []).forEach(course => {
+    (course.perguntas || []).forEach(pergunta => {
+      if (String(pergunta.autorEmail || '').toLowerCase().trim() === email) {
+        recentActivity.push({
+          type: 'question',
+          title: `Enviou duvida em ${course.titulo || 'Curso'}`,
+          at: pergunta.createdAt
+        });
+      }
+    });
+  });
+
+  recentActivity.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+
+  res.json({
+    totalCourses: enrolledCourses.length,
+    completedCourses,
+    lessonsWatched: completedLessons,
+    questionsAsked,
+    progressByCourse,
+    recentActivity: recentActivity.slice(0, 5)
+  });
+});
+
 app.get('/certificados/:code', (req, res) => {
   const data = readData();
   const code = req.params.code;
