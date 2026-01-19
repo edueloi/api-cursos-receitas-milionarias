@@ -346,6 +346,22 @@ app.get('/usuarios/:email/assinatura', (req, res) => {
   res.json({ assinatura });
 });
 
+app.post('/usuarios/:email/perfil', (req, res) => {
+  const data = readData();
+  const email = req.params.email;
+  const name = (req.body?.name || '').toString().trim();
+  if (!name) return res.status(400).json({ error: 'Nome obrigatorio.' });
+  if (!data.usuarios[email]) {
+    data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
+  }
+  data.usuarios[email].perfil = {
+    nome: name,
+    updatedAt: new Date().toISOString()
+  };
+  writeData(data);
+  res.json({ ok: true });
+});
+
 app.post('/usuarios/:email/assinatura', (req, res) => {
   const data = readData();
   const email = req.params.email;
@@ -440,7 +456,7 @@ app.post('/usuarios/:email/certificados', (req, res) => {
     data.usuarios[email].certificados[id] = {
       code,
       completedAt: completedAt || new Date().toISOString(),
-      name: name || data.usuarios[email]?.nome || email
+      name: name || data.usuarios[email]?.perfil?.nome || email
     };
     writeData(data);
   }
@@ -642,7 +658,7 @@ app.get('/certificados/:code', (req, res) => {
           valido: true,
           certificado: {
             email,
-            name: certs[courseId]?.name || email,
+            name: certs[courseId]?.name || data.usuarios[email]?.perfil?.nome || email,
             courseId,
             code: certs[courseId].code,
             completedAt: certs[courseId].completedAt
