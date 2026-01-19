@@ -410,7 +410,7 @@ app.get('/usuarios/:email/certificados', (req, res) => {
 app.post('/usuarios/:email/certificados', (req, res) => {
   const data = readData();
   const email = req.params.email;
-  const { courseId, completedAt } = req.body || {};
+  const { courseId, completedAt, name } = req.body || {};
   if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
 
   if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [], progresso: {}, certificados: {} };
@@ -421,7 +421,8 @@ app.post('/usuarios/:email/certificados', (req, res) => {
     const code = `RM-${id.slice(-6).toUpperCase()}-${Math.round(Math.random() * 1e6)}`;
     data.usuarios[email].certificados[id] = {
       code,
-      completedAt: completedAt || new Date().toISOString()
+      completedAt: completedAt || new Date().toISOString(),
+      name: name || data.usuarios[email]?.nome || email
     };
     writeData(data);
   }
@@ -622,6 +623,7 @@ app.get('/certificados/:code', (req, res) => {
           valido: true,
           certificado: {
             email,
+            name: certs[courseId]?.name || email,
             courseId,
             code: certs[courseId].code,
             completedAt: certs[courseId].completedAt
