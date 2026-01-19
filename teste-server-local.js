@@ -450,6 +450,77 @@ app.get('/certificados/:code', (req, res) => {
 });
 
 /* =========================================
+ * DASHBOARD - INSTRUTOR
+ * ========================================= */
+app.get('/instrutor/:email/dashboard', (req, res) => {
+  const data = readData();
+  const email = String(req.params.email || '').toLowerCase().trim();
+  const cursos = (data.cursos || []).filter(c => String(c.email || '').toLowerCase().trim() === email);
+
+  const courseIds = cursos.map(c => String(c.id));
+  const studentsSet = new Set();
+  let totalViews = 0;
+  const lessonViews = new Map();
+
+  Object.entries(data.usuarios || {}).forEach(([userEmail, userData]) => {
+    const meusCursos = (userData?.meusCursos || []).map(id => String(id));
+    const hasEnrollment = meusCursos.some(id => courseIds.includes(id));
+    if (hasEnrollment) studentsSet.add(userEmail);
+
+    const progresso = userData?.progresso || {};
+    Object.keys(progresso).forEach(cid => {
+      if (!courseIds.includes(String(cid))) return;
+      const completadas = (progresso[cid]?.completadas || []).map(id => String(id));
+      totalViews += completadas.length;
+      completadas.forEach(lessonId => {
+        lessonViews.set(lessonId, (lessonViews.get(lessonId) || 0) + 1);
+      });
+    });
+  });
+
+  let totalQuestions = 0;
+  cursos.forEach(c => {
+    totalQuestions += (c.perguntas || []).length;
+  });
+
+  const topLessons = Array.from(lessonViews.entries())
+    .map(([lessonId, views]) => {
+      let lessonTitle = '';
+      let courseTitle = '';
+      let courseId = '';
+      for (const course of cursos) {
+        const modulos = course.modulos || [];
+        for (let mIdx = 0; mIdx < modulos.length; mIdx += 1) {
+          const conteudos = modulos[mIdx]?.conteudos || [];
+          for (let lIdx = 0; lIdx < conteudos.length; lIdx += 1) {
+            const expectedId = `les-${mIdx}-${lIdx}`;
+            if (expectedId === lessonId) {
+              lessonTitle = conteudos[lIdx]?.tituloAula || '';
+              courseTitle = course.titulo || '';
+              courseId = String(course.id);
+              break;
+            }
+          }
+          if (lessonTitle) break;
+        }
+        if (lessonTitle) break;
+      }
+      return { lessonId, lessonTitle, courseTitle, courseId, views };
+    })
+    .filter(item => item.lessonTitle)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 5);
+
+  res.json({
+    totalCourses: cursos.length,
+    totalStudents: studentsSet.size,
+    totalViews,
+    totalQuestions,
+    topLessons
+  });
+});
+
+/* =========================================
  * CURSOS - UPDATE
  * ========================================= */
 app.put('/cursos/:id', (req, res) => {
