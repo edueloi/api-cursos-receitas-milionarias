@@ -174,6 +174,11 @@ app.post(
 
       // Se for edição, reaproveita imagem/materiais antigos caso não mande novos
       const old = existingIndex !== -1 ? data.cursos[existingIndex] : null;
+      const normalizedEmail = String(email || '').toLowerCase().trim();
+      const oldEmail = String(old?.email || '').toLowerCase().trim();
+      if (existingIndex !== -1 && oldEmail && normalizedEmail && oldEmail !== normalizedEmail) {
+        return res.status(403).json({ error: 'Apenas o dono do curso pode editar.' });
+      }
 
       const newImagemCapa = req.files?.imagemCapa?.[0]?.filename ?? null;
       const newMateriais = req.files?.materiais
@@ -423,6 +428,15 @@ app.put('/cursos/:id', (req, res) => {
   const idx = data.cursos.findIndex(c => c.id == req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Curso não encontrado.' });
 
+  const requestEmail = String(req.body?.email || '').toLowerCase().trim();
+  const ownerEmail = String(data.cursos[idx]?.email || '').toLowerCase().trim();
+  if (!requestEmail) {
+    return res.status(400).json({ error: 'Email obrigatorio para atualizar curso.' });
+  }
+  if (ownerEmail && ownerEmail !== requestEmail) {
+    return res.status(403).json({ error: 'Apenas o dono do curso pode editar.' });
+  }
+
   data.cursos[idx] = { ...data.cursos[idx], ...req.body };
   writeData(data);
 
@@ -514,6 +528,15 @@ app.delete('/cursos/:id', (req, res) => {
   const data = readData();
   const idx = data.cursos.findIndex(c => c.id == req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Curso não encontrado.' });
+
+  const requestEmail = String(req.query?.email || '').toLowerCase().trim();
+  const ownerEmail = String(data.cursos[idx]?.email || '').toLowerCase().trim();
+  if (!requestEmail) {
+    return res.status(400).json({ error: 'Email obrigatorio para excluir curso.' });
+  }
+  if (ownerEmail && ownerEmail !== requestEmail) {
+    return res.status(403).json({ error: 'Apenas o dono do curso pode excluir.' });
+  }
 
   const curso = data.cursos[idx];
 
