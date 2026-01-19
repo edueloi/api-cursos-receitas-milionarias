@@ -170,6 +170,7 @@ app.post(
 
       // Se for edição, reaproveita imagem/materiais antigos caso não mande novos
       const old = existingIndex !== -1 ? data.cursos[existingIndex] : null;
+      const removeCover = req.body?.removerImagemCapa === 'true' || req.body?.removerImagemCapa === true;
       const normalizedEmail = String(email || '').toLowerCase().trim();
       const oldEmail = String(old?.email || '').toLowerCase().trim();
       if (existingIndex !== -1 && oldEmail && normalizedEmail && oldEmail !== normalizedEmail) {
@@ -180,6 +181,34 @@ app.post(
       const newMateriais = req.files?.materiais
         ? req.files.materiais.map(m => ({ filename: m.filename, originalname: m.originalname }))
         : null;
+      if (existingIndex !== -1 && old?.imagemCapa) {
+        if (removeCover || (newImagemCapa && old.imagemCapa !== newImagemCapa)) {
+          const img = path.join(VIDEOS_DIR, old.imagemCapa);
+          if (fs.existsSync(img)) fs.unlinkSync(img);
+        }
+      }
+
+      const oldModules = old?.modulos || [];
+      modulosNormalized.forEach((mod, mIdx) => {
+        const oldLessons = oldModules[mIdx]?.conteudos || [];
+        (mod.conteudos || []).forEach((lesson, lIdx) => {
+          const oldVideo = oldLessons[lIdx]?.video?.filename;
+          const newVideo = lesson?.video || {};
+          if (newVideo.remove) {
+            if (oldVideo) {
+              const vid = path.join(VIDEOS_DIR, oldVideo);
+              if (fs.existsSync(vid)) fs.unlinkSync(vid);
+            }
+            lesson.video = {};
+            return;
+          }
+          const newFilename = newVideo.filename;
+          if (newFilename && oldVideo && oldVideo !== newFilename) {
+            const vid = path.join(VIDEOS_DIR, oldVideo);
+            if (fs.existsSync(vid)) fs.unlinkSync(vid);
+          }
+        });
+      });
 
       const categoriaNome = (categoria || '').toString().trim();
       if (categoriaNome) {
@@ -200,7 +229,7 @@ app.post(
         nivel,
         preco,
         rascunho: rascunho === 'true' || rascunho === true,
-        imagemCapa: newImagemCapa !== null ? newImagemCapa : (old?.imagemCapa ?? null),
+        imagemCapa: removeCover ? null : (newImagemCapa !== null ? newImagemCapa : (old?.imagemCapa ?? null)),
         materiais: newMateriais !== null ? newMateriais : (old?.materiais ?? []),
         modulos: modulosNormalized,
         dataCadastro: old?.dataCadastro ?? new Date().toISOString(),
