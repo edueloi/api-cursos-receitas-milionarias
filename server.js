@@ -298,14 +298,17 @@ app.post('/usuarios/:email/meus-cursos', (req, res) => {
   if (!courseId) return res.status(400).json({ error: 'courseId obrigatorio.' });
 
   if (!data.usuarios[email]) data.usuarios[email] = { meusCursos: [], favoritos: [] };
+  if (!data.usuarios[email].inscricoes) data.usuarios[email].inscricoes = {};
 
   const list = data.usuarios[email].meusCursos;
   const id = String(courseId);
 
   if (action === 'remove') {
     data.usuarios[email].meusCursos = list.filter(c => String(c) !== id);
+    delete data.usuarios[email].inscricoes[id];
   } else if (!list.includes(id)) {
     list.push(id);
+    data.usuarios[email].inscricoes[id] = new Date().toISOString();
   }
 
   writeData(data);
@@ -518,6 +521,111 @@ app.get('/usuarios/:email/dashboard', (req, res) => {
     progressByCourse,
     recentActivity: recentActivity.slice(0, 5)
   });
+});
+
+/* =========================================
+ * NOTIFICACOES - USUARIO
+ * ========================================= */
+app.get('/usuarios/:email/notificacoes', (req, res) => {
+  const data = readData();
+  const email = String(req.params.email || '').toLowerCase().trim();
+  const userData = data.usuarios[email] || { meusCursos: [], favoritos: [], progresso: {}, certificados: {}, inscricoes: {} };
+  const cursos = data.cursos || [];
+
+  const isInstructor = cursos.some(c => String(c.email || '').toLowerCase().trim() === email);
+  const notifications = [];
+
+  if (isInstructor) {
+    const myCourses = cursos.filter(c => String(c.email || '').toLowerCase().trim() === email);
+    const myCourseIds = myCourses.map(c => String(c.id));
+
+    Object.entries(data.usuarios || {}).forEach(([studentEmail, info]) => {
+      const inscricoes = info?.inscricoes || {};
+      Object.keys(inscricoes).forEach(courseId => {
+        if (!myCourseIds.includes(String(courseId))) return;
+        const course = myCourses.find(c => String(c.id) === String(courseId));
+        notifications.push({
+          type: 'new-student',
+          title: 'Novo aluno inscrito',
+          body: `${studentEmail} entrou em ${course?.titulo || 'um curso'}.`,
+          at: inscricoes[courseId]
+        });
+      });
+    });
+
+    Object.entries(data.usuarios || {}).forEach(([studentEmail, info]) => {
+      const certs = info?.certificados || {};
+      Object.keys(certs).forEach(courseId => {
+        if (!myCourseIds.includes(String(courseId))) return;
+        const course = myCourses.find(c => String(c.id) === String(courseId));
+        notifications.push({
+          type: 'certificate',
+          title: 'Certificado emitido',
+          body: `${studentEmail} concluiu ${course?.titulo || 'um curso'}.`,
+          at: certs[courseId]?.completedAt
+        });
+      });
+    });
+
+    myCourses.forEach(course => {
+      (course.perguntas || []).forEach(pergunta => {
+        notifications.push({
+          type: 'question',
+          title: 'Nova duvida',
+          body: pergunta.texto || `Duvida no curso ${course.titulo || ''}`,
+          at: pergunta.createdAt
+        });
+      });
+    });
+  } else {
+    const enrolledIds = (userData.meusCursos || []).map(id => String(id));
+    const enrolledCourses = cursos.filter(c => enrolledIds.includes(String(c.id)));
+
+    Object.keys(userData.certificados || {}).forEach(courseId => {
+      const cert = userData.certificados[courseId];
+      const course = enrolledCourses.find(c => String(c.id) === String(courseId));
+      if (cert?.completedAt) {
+        notifications.push({
+          type: 'certificate',
+          title: 'Certificado disponivel',
+          body: `Seu certificado de ${course?.titulo || 'curso'} esta pronto.`,
+          at: cert.completedAt
+        });
+      }
+    });
+
+    enrolledCourses.forEach(course => {
+      (course.perguntas || []).forEach(pergunta => {
+        if (String(pergunta.autorEmail || '').toLowerCase().trim() !== email) return;
+        (pergunta.respostas || []).forEach(resposta => {
+          notifications.push({
+            type: 'answer',
+            title: 'Resposta do instrutor',
+            body: resposta.texto || `Resposta na duvida do curso ${course.titulo || ''}`,
+            at: resposta.createdAt
+          });
+        });
+      });
+    });
+
+    cursos.forEach(course => {
+      if (!course.dataCadastro) return;
+      notifications.push({
+        type: 'new-course',
+        title: 'Novo curso publicado',
+        body: course.titulo || 'Novo curso disponivel',
+        at: course.dataCadastro
+      });
+    });
+  }
+
+  const normalized = notifications
+    .filter(n => n.at)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 10)
+    .map((n, idx) => ({ id: `${n.type}-${idx}`, ...n }));
+
+  res.json({ notifications: normalized });
 });
 
 app.get('/certificados/:code', (req, res) => {
@@ -778,6 +886,9 @@ app.delete('/cursos/:id', (req, res) => {
       const lists = data.usuarios[email];
       if (lists?.meusCursos) {
         lists.meusCursos = lists.meusCursos.filter(cid => String(cid) !== String(req.params.id));
+      }
+      if (lists?.inscricoes) {
+        delete lists.inscricoes[String(req.params.id)];
       }
       if (lists?.favoritos) {
         lists.favoritos = lists.favoritos.filter(cid => String(cid) !== String(req.params.id));
