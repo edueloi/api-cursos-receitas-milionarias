@@ -92,6 +92,18 @@ const readData = () => {
 const writeData = (data) =>
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
+// Fully decode URI-encoded filenames (prevents %25 encoding accumulation)
+const fullyDecodeFilename = (fn) => {
+  if (!fn || typeof fn !== 'string') return fn;
+  let prev = '';
+  let current = fn;
+  while (current !== prev) {
+    prev = current;
+    try { current = decodeURIComponent(current); } catch(e) { break; }
+  }
+  return current;
+};
+
 /* =========================================
  * HEALTH CHECK
  * ========================================= */
@@ -144,15 +156,24 @@ app.post(
         ...mod,
         conteudos: (mod.conteudos || []).map(lesson => {
           const originalVideoName = lesson?.video?.filename;
-          const video =
+          let video =
             originalVideoName && videoFileMap.has(originalVideoName)
               ? { ...lesson.video, filename: videoFileMap.get(originalVideoName) }
               : lesson.video;
+
+          // Always fully decode video filename to prevent %25 encoding accumulation
+          if (video && video.filename && !videoFileMap.has(originalVideoName)) {
+            video = { ...video, filename: fullyDecodeFilename(video.filename) };
+          }
 
           const materiais = (lesson.materiais || []).map(mat => {
             const key = mat.originalname || mat.filename;
             if (key && materialFileMap.has(key)) {
               return { ...mat, filename: materialFileMap.get(key) };
+            }
+            // Also decode material filenames
+            if (mat.filename) {
+              return { ...mat, filename: fullyDecodeFilename(mat.filename) };
             }
             return mat;
           });
@@ -188,6 +209,9 @@ app.post(
         }
       }
 
+      // Set of filenames that were JUST uploaded in this request
+      const newlyUploadedFilenames = new Set(videoFileMap.values());
+
       const oldModules = old?.modulos || [];
       modulosNormalized.forEach((mod, mIdx) => {
         const oldLessons = oldModules[mIdx]?.conteudos || [];
@@ -196,16 +220,26 @@ app.post(
           const newVideo = lesson?.video || {};
           if (newVideo.remove) {
             if (oldVideo) {
-              const vid = path.join(VIDEOS_DIR, oldVideo);
+              // Try both decoded and raw filename for deletion
+              const decodedOld = fullyDecodeFilename(oldVideo);
+              const vid = path.join(VIDEOS_DIR, decodedOld);
+              const vidRaw = path.join(VIDEOS_DIR, oldVideo);
               if (fs.existsSync(vid)) fs.unlinkSync(vid);
+              else if (fs.existsSync(vidRaw)) fs.unlinkSync(vidRaw);
             }
             lesson.video = {};
             return;
           }
           const newFilename = newVideo.filename;
-          if (newFilename && oldVideo && oldVideo !== newFilename) {
-            const vid = path.join(VIDEOS_DIR, oldVideo);
-            if (fs.existsSync(vid)) fs.unlinkSync(vid);
+          // ONLY delete old video if a NEW file was actually uploaded to replace it
+          if (newFilename && oldVideo && newlyUploadedFilenames.has(newFilename)) {
+            const decodedOld = fullyDecodeFilename(oldVideo);
+            if (decodedOld !== newFilename) {
+              const vid = path.join(VIDEOS_DIR, decodedOld);
+              const vidRaw = path.join(VIDEOS_DIR, oldVideo);
+              if (fs.existsSync(vid)) fs.unlinkSync(vid);
+              else if (fs.existsSync(vidRaw)) fs.unlinkSync(vidRaw);
+            }
           }
         });
       });
