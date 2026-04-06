@@ -718,10 +718,33 @@ app.get('/instrutor/:email/dashboard', (req, res) => {
   let totalViews = 0;
   const lessonViews = new Map();
 
+  const studentsList = [];
   Object.entries(data.usuarios || {}).forEach(([userEmail, userData]) => {
     const meusCursos = (userData?.meusCursos || []).map(id => String(id));
     const hasEnrollment = meusCursos.some(id => courseIds.includes(id));
-    if (hasEnrollment) studentsSet.add(userEmail);
+    if (hasEnrollment) {
+      studentsSet.add(userEmail);
+
+      const enrolledCoursesDetail = cursos
+        .filter(c => meusCursos.includes(String(c.id)))
+        .map(c => ({ id: String(c.id), title: c.titulo }));
+      
+      let joinedAt = null;
+      if (userData.inscricoes) {
+        const dates = Object.entries(userData.inscricoes)
+             .filter(([k]) => courseIds.includes(k))
+             .map(([k, v]) => new Date(v).getTime())
+             .filter(t => !isNaN(t));
+        if (dates.length > 0) joinedAt = new Date(Math.max(...dates)).toISOString();
+      }
+
+      studentsList.push({
+        name: userData?.perfil?.nome || 'Aluno Sem Nome',
+        email: userEmail,
+        courses: enrolledCoursesDetail,
+        joinedAt
+      });
+    }
 
     const progresso = userData?.progresso || {};
     Object.keys(progresso).forEach(cid => {
@@ -772,7 +795,8 @@ app.get('/instrutor/:email/dashboard', (req, res) => {
     totalStudents: studentsSet.size,
     totalViews,
     totalQuestions,
-    topLessons
+    topLessons,
+    students: studentsList
   });
 });
 
